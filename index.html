@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>多链钱包地址渗入器 · Enterprise Edition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.1/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bitcoinjs-lib@6.1.5/index.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #070b18;
+      --panel: #0e1430;
+      --accent: #22d3ee;
+      --accent2: #818cf8;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --danger: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      background: radial-gradient(900px 500px at 10% -10%, #1e2a60, transparent), var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 26px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: .4px;
+    }
+    header span { color: var(--accent); }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 26px;
+    }
+    .card {
+      background: linear-gradient(180deg, #10173a, #0a1028);
+      border: 1px solid #1f2a44;
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 30px 70px rgba(0,0,0,.45);
+    }
+    h2 { margin-top: 0; font-size: 18px; }
+
+    .field { margin-bottom: 18px; }
+    .field label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .field input, .field select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #243052;
+      background: #070c1f;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    button {
+      flex: 1;
+      padding: 14px;
+      border-radius: 14px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: #020617;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid #334155;
+    }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 20px;
+    }
+    .stat {
+      background: #070c1f;
+      border: 1px solid #1f2a44;
+      border-radius: 14px;
+      padding: 14px;
+      text-align: center;
+    }
+    .stat strong {
+      display: block;
+      font-size: 18px;
+      color: var(--accent);
+    }
+
+    .result {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .chain { color: var(--accent2); font-weight: 600; }
+
+    footer {
+      padding: 18px 40px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid #1e293b;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>多链 <span>地址生成器</span></h1>
+  <div>Enterprise Edition</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>生成配置</h2>
+
+    <div class="field">
+      <label>区块链网络</label>
+      <select id="chain">
+        <option value="tron">TRON (TRC20)</option>
+        <option value="eth">Ethereum (ERC20)</option>
+        <option value="btc">Bitcoin (Legacy)</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>地址前缀</label>
+      <input id="prefix" placeholder="如：T888 / 0xabc / 1Love" />
+    </div>
+
+    <div class="field">
+      <label>最少匹配长度</label>
+      <input id="minLen" type="number" value="4" min="1" max="10" />
+    </div>
+
+    <div class="actions">
+      <button id="start">开始生成</button>
+      <button id="stop" class="secondary" disabled>停止</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><strong id="tries">0</strong>尝试次数</div>
+      <div class="stat"><strong id="speed">0</strong>速度 / 秒</div>
+      <div class="stat"><strong id="found">0</strong>已命中</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>生成结果</h2>
+    <div id="results"></div>
+  </section>
+</main>
+
+<footer>
+  前端生成钱包请勿直接用于真实资金环境。
+</footer>
+
+<script>
+  const tronWeb = new TronWeb({ fullHost: 'https://api.trongrid.io' });
+  let running = false;
+  let tries = 0, found = 0;
+  let lastTime = Date.now(), lastTries = 0;
+
+  function updateStats() {
+    document.getElementById('tries').innerText = tries;
+    document.getElementById('found').innerText = found;
+    const now = Date.now();
+    const diff = (now - lastTime) / 1000;
+    if (diff >= 1) {
+      document.getElementById('speed').innerText = Math.round((tries - lastTries) / diff);
+      lastTime = now;
+      lastTries = tries;
+    }
+  }
+
+  function match(addr, prefix, len) {
+    return addr.toLowerCase().startsWith(prefix.toLowerCase().slice(0, len));
+  }
+
+  async function generate() {
+    const chain = document.getElementById('chain').value;
+    const prefix = document.getElementById('prefix').value.trim();
+    const minLen = parseInt(document.getElementById('minLen').value, 10);
+
+    while (running) {
+      tries++;
+      let address = '', pk = '';
+
+      if (chain === 'tron') {
+        const acc = await tronWeb.createAccount();
+        address = acc.address.base58;
+        pk = acc.privateKey;
+      }
+
+      if (chain === 'eth') {
+        const wallet = ethers.Wallet.createRandom();
+        address = wallet.address;
+        pk = wallet.privateKey;
+      }
+
+      if (chain === 'btc') {
+        const keyPair = bitcoinjs.ECPair.makeRandom();
+        const { address: btcAddr } = bitcoinjs.payments.p2pkh({ pubkey: keyPair.publicKey });
+        address = btcAddr;
+        pk = keyPair.toWIF();
+      }
+
+      if (address && match(address, prefix, minLen)) {
+        found++;
+        const div = document.createElement('div');
+        div.className = 'result';
+        div.innerHTML = `<span class="chain">${chain.toUpperCase()}</span><br>地址：${address}<br>私钥：${pk}`;
+        document.getElementById('results').prepend(div);
+      }
+
+      updateStats();
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  document.getElementById('start').onclick = () => {
+    running = true;
+    document.getElementById('start').disabled = true;
+    document.getElementById('stop').disabled = false;
+    generate();
+  };
+
+  document.getElementById('stop').onclick = () => {
+    running = false;
+    document.getElementById('start').disabled = false;
+    document.getElementById('stop').disabled = true;
+  };
+</script>
+
+</body>
+</html>
